@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install Semgrep
+      run: pip install semgrep
+
+    - name: Check Semgrep version
+      run: semgrep --version
+
+    - name: Run Semgrep
+      id: semgrep
+      run: semgrep --config= "p/java" --json > semgrep_results.json || echo "Semgrep failed"
+
+    - name: Check Semgrep Results File
+      run: ls -la
+
+    - name: Debug Semgrep results
+      if: always()
+      run: cat semgrep_results.json || echo "No Semgrep results"
+
+    - name: Set up OPA
+      run: |
+        curl -L -o opa https://openpolicyagent.org/downloads/v0.27.1/opa_linux_amd64
+        chmod +x ./opa
+
+    - name: Validate with OPA
+      if: always()
+      run: ./opa eval --input semgrep_results.json --data .github/workflows/policy.rego 'data.semgrep.policy.deny' || echo "OPA evaluation failed"
+
+    - name: Display OPA results
+      if: always()
+      run: |
+        echo "OPA Results:"
+        ./opa eval --input semgrep_results.json --data .github/workflows/policy.rego 'data.semgrep.policy.deny' --format json | jq .
